@@ -117,4 +117,11 @@ write-host;
 write-host($link);
 write-host;
 
+$date = Get-Date -UFormat "%d.%m.%y %T";
+$logString = "{0}       [{1}] {2}" -f $link, $date, $file;
+
+$stream = New-Object System.IO.StreamWriter(New-Object IO.FileStream("log.txt", [System.IO.FileMode]::Append));
+$stream.WriteLine($logString);
+$stream.close();
+
 $link | C:\Windows\System32\clip.exe;
