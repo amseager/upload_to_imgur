@@ -27,7 +27,7 @@ if ($contentTypeMap[$ext]) {
 };
 
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
-write-host("Please wait...");
+write-host("This window will close automatically. Please wait... ");
 write-host;
 
 $r = [System.Net.WebRequest]::Create("http://imgur.com/upload/start_session/");
@@ -47,7 +47,9 @@ $sr = new-object System.IO.StreamReader $resp;
 $result = $sr.ReadToEnd();
 write-host($result);
 
-$url='http://imgur.com/upload?current_upload=1&total_uploads=1&terms=0&gallery_type=&location=outside&gallery_submit=0&create_album=0&album_title=Optiona%20Album%20Title&sid={0}' -f $sid;
+# $url='http://imgur.com/upload?current_upload=1&total_uploads=1&terms=0&gallery_type=&location=outside&gallery_submit=0&create_album=0&album_title=Optiona%20Album%20Title&sid={0}' -f $sid;
+
+$url = 'http://imgur.com/upload'
 
 $bytes = [System.IO.File]::ReadAllBytes($file);
 $enc = [System.Text.Encoding]::GetEncoding(0);
@@ -59,18 +61,57 @@ $footer = "--{0}--" -f $boundary;
 
 [System.Text.StringBuilder]$contents = New-Object System.Text.StringBuilder;
 [void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="current_upload"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('1');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="total_uploads"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('1');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="terms"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('0');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="gallery_type"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine();
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="location"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('outside');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="gallery_submit"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('0');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="create_album"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('0');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="album_title"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine('Optional Album Title');
+[void]$contents.AppendLine($header);
+[void]$contents.AppendLine('Content-Disposition: form-data; name="sid"');
+[void]$contents.AppendLine();
+[void]$contents.AppendLine($sid);
+# [void]$contents.AppendLine($header);
+# [void]$contents.AppendLine('Content-Disposition: form-data; name="new_album_id"');
+# [void]$contents.AppendLine();
+# [void]$contents.AppendLine($new_album_id);
+[void]$contents.AppendLine($header);
 [void]$contents.AppendLine('Content-Disposition: form-data; name="Filedata"; filename="{0}"' -f $fileName);
 [void]$contents.AppendLine('Content-Type: {0}' -f $contentType);
-[void]$contents.AppendLine('Content-Transfer-Encoding: binary');
+# [void]$contents.AppendLine('Content-Transfer-Encoding: binary');
 [void]$contents.AppendLine();
 [void]$contents.AppendLine($filedata);
 [void]$contents.AppendLine($footer);
 
-$postContentType = "multipart/form-data; boundary={0}; charset=UTF-8" -f $boundary;
 
 $r = [System.Net.WebRequest]::Create($url);
 
-$r.ContentType = $postContentType;
+$r.ContentType = "multipart/form-data; boundary={0}; charset=UTF-8" -f $boundary;
 $r.Method = "POST";
 $r.UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 OPR/36.0.2130.32";
 $r.Accept = "application/json, text/javascript, */*; q=0.01";
