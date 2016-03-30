@@ -26,6 +26,10 @@ if ($contentTypeMap[$ext]) {
 	[Environment]::Exit(1);
 };
 
+write-host("You'll get a direct link to your image in clipboard when the script passes.");
+write-host("Please wait...");
+write-host;
+
 $r = [System.Net.WebRequest]::Create("http://imgur.com/upload/start_session/");
 $resp = $r.GetResponse().GetResponseStream();
 $sr = new-object System.IO.StreamReader $resp;
