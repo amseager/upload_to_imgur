@@ -1,5 +1,5 @@
 @echo off
 setlocal
 cd /d %~dp0
-powershell -ExecutionPolicy UnRestricted ./imgur_script.ps1 '%~f1'
+powershell -ExecutionPolicy UnRestricted ./imgur_script.ps1 '%*'
 endlocal
