@@ -2,16 +2,73 @@ Param(
 	[String]$files
 );
 
+$CurrentDirectory = [environment]::CurrentDirectory;
+# $Icon = "{0}\icon.ico" -f $CurrentDirectory;
+$Icon = "d:\Users\user\Desktop\upload_to_imgur\icon.ico";
+
+function Show-BalloonTip {            
+[cmdletbinding()]            
+param(            
+ [parameter(Mandatory=$true)]            
+ [string]$Title,            
+ [ValidateSet("Info","Warning","Error")]             
+ [string]$MessageType = "Info",            
+ [parameter(Mandatory=$true)]            
+ [string]$Message,            
+ [string]$Duration=10000            
+)            
+
+[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null            
+$balloon = New-Object System.Windows.Forms.NotifyIcon                    
+$balloon.BalloonTipIcon = $MessageType            
+$balloon.BalloonTipText = $Message            
+$balloon.BalloonTipTitle = $Title       
+$balloon.Icon = $Icon     
+$balloon.Visible = $true            
+$balloon.ShowBalloonTip($Duration)  
+Start-Sleep -Milliseconds $Duration;
+$balloon.Dispose()        
+
+}
+
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
 write-host("This window will close automatically. Please wait... ");
 write-host;
 
+$contentTypeMap = @{
+    ".jpg"  = "image/jpeg";
+    ".jpeg" = "image/jpeg";
+    ".gif"  = "image/gif";
+    ".png"  = "image/png";
+    ".tiff" = "image/tiff";
+  };
 
 $pattern = '(\w:.+?\.\w+)\s|(\w:.+?\.\w+)$';
-$filesArray = [regex]::matches($files, $pattern);
-$filesCount = $filesArray.count
+$matches = [regex]::matches($files, $pattern);
+$matchCount = $matches.count;
 
+$images = @{};
 
+for ($i = 0; $i -lt $matchCount; $i++) {
+	$file = $matches[$i].ToString().Trim();
+	
+	$dotPosition = $file.LastIndexOf('.');
+	$ext = $file.Substring($dotPosition).ToLower();
+
+	if ($contentTypeMap[$ext]) {
+		$images.Add($file, $contentTypeMap[$ext]);
+	};
+}
+
+$filesCount = $images.Count;
+
+if ($filesCount -eq 0) {
+	write-host('Nothing to upload');
+	Show-BalloonTip -Title 'Nothing to upload' -MessageType Error -Message "$matchCount files were submitted. None of them are images." -Duration 6000
+	[Environment]::Exit(1);
+};
+
+Show-BalloonTip -Title "Uploading..." -MessageType Info -Message "Please wait" -Duration 3000
 
 # 1st req - startsession
 
@@ -82,39 +139,9 @@ if ($filesCount -gt 1) {
 
 # 3rd req - upload
 
-$contentTypeMap = @{
-    ".jpg"  = "image/jpeg";
-    ".jpeg" = "image/jpeg";
-    ".gif"  = "image/gif";
-    ".png"  = "image/png";
-    ".tiff" = "image/tiff";
-  };
+foreach ($file in $images.Keys) {
 
-$isAtLeastOneImageUploaded = $false;  
-  
-for ($i = 0; $i -lt $filesCount; $i++) {
-	$file = $filesArray[$i].ToString().Trim();
-	
-	write-host;
-	write-host($file);
-	
-	$dotPosition = $file.LastIndexOf('.');
-	$slashPosition = $file.LastIndexOf('\');
-	
-	if ($slashPosition -eq -1) {
-		$fileName = $file.Substring(0, $dotPosition);
-	} else {
-		$fileName = $file.Substring($slashPosition + 1, $dotPosition - $slashPosition - 1);
-	};
-	$ext = $file.Substring($dotPosition).ToLower();
-
-	if ($contentTypeMap[$ext]) {
-		$contentType = $contentTypeMap[$ext]; 
-	} else {
-		write-host('Incorrect extension type of file.');
-		continue;
-		# [Environment]::Exit(1);
-	};
+	write-host $file;
 	
 	$url = 'http://imgur.com/upload';
 	$r = [System.Net.WebRequest]::Create($url);
@@ -199,9 +226,9 @@ for ($i = 0; $i -lt $filesCount; $i++) {
 	};
 	
 	[void]$contents.AppendLine($header);
-	$fileContentDisposition = 'Content-Disposition: form-data; name="Filedata"; filename="{0}$ext"' -f $fileName, $ext;
+	$fileContentDisposition = 'Content-Disposition: form-data; name="Filedata"; filename="{0}"' -f $file;
 	[void]$contents.AppendLine($fileContentDisposition);
-	[void]$contents.AppendLine('Content-Type: {0}' -f $contentType);
+	[void]$contents.AppendLine('Content-Type: {0}' -f $images.Item($file));
 	[void]$contents.AppendLine();
 	[void]$contents.AppendLine($filedata);
 	
@@ -223,45 +250,45 @@ for ($i = 0; $i -lt $filesCount; $i++) {
 	$result = $sr.ReadToEnd();
 	
 	write-host("Uploaded.");
-	$isAtLeastOneImageUploaded = $true;
+	write-host;
 		
 };
 
 
-if ($isAtLeastOneImageUploaded) {
-	
-	$date = Get-Date -UFormat "%d.%m.%y %T";
+$date = Get-Date -UFormat "%d.%m.%y %T";
 
-	if ($filesCount -eq 1) {
+if ($filesCount -eq 1) {
 
-		$found = $result -match '"hash":"(.+?)"'
-		if ($found) {
-			$hash = $matches[1];
-		};
-		# write-host('hash = {0}' -f $hash);
-
-		$link = 'http://i.imgur.com/{0}{1}' -f $hash, $ext;
-		$logFile = 'log_single.txt';
-		$logString = "{0}       [{1}] {2}" -f $link, $date, $file;
-
-	} else {
-
-		$link = 'http://imgur.com/a/{0}' -f $newAlbumId;
-		$logFile = 'log_albums.txt';
-		$logString = "{0}       [{1}]" -f $link, $date;
+	$found = $result -match '"hash":"(.+?)"'
+	if ($found) {
+		$hash = $matches[1];
 	};
+	# write-host('hash = {0}' -f $hash);
 
-	$stream = New-Object System.IO.StreamWriter(New-Object IO.FileStream($logFile, [System.IO.FileMode]::Append));
-	$stream.WriteLine($logString);
-	$stream.close();
+	$link = 'http://i.imgur.com/{0}{1}' -f $hash, $ext;
+	$logFile = 'log_single.txt';
+	$logString = "{0}       [{1}] {2}" -f $link, $date, $file;
+	$title = "Image has been uploaded";
 
-	write-host;
-	write-host($link);
-	write-host;
-		
-	$link | C:\Windows\System32\clip.exe;
+} else {
+
+	$link = 'http://imgur.com/a/{0}' -f $newAlbumId;
+	$logFile = 'log_albums.txt';
+	$logString = "{0}       [{1}]" -f $link, $date;
+	$title = "{0} images have been uploaded" -f $filesCount;
 	
-}
+};
 
+$stream = New-Object System.IO.StreamWriter(New-Object IO.FileStream($logFile, [System.IO.FileMode]::Append));
+$stream.WriteLine($logString);
+$stream.close();
 
+write-host($link);
+write-host;
+	
+$link | C:\Windows\System32\clip.exe;
+
+Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000
+	
+	
 powershell
