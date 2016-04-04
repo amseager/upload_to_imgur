@@ -3,32 +3,30 @@ Param(
 );
 
 $CurrentDirectory = [environment]::CurrentDirectory;
-# $Icon = "{0}\icon.ico" -f $CurrentDirectory;
-$Icon = "d:\Users\user\Desktop\upload_to_imgur\icon.ico";
+$Icon = "{0}\icon.ico" -f $CurrentDirectory;
 
-function Show-BalloonTip {            
-[cmdletbinding()]            
-param(            
- [parameter(Mandatory=$true)]            
- [string]$Title,            
- [ValidateSet("Info","Warning","Error")]             
- [string]$MessageType = "Info",            
- [parameter(Mandatory=$true)]            
- [string]$Message,            
- [string]$Duration=10000            
-)            
+function Show-BalloonTip {
+	[cmdletbinding()]
+	param(
+		[parameter(Mandatory=$true)]
+		[string]$Title,
+		[ValidateSet("Info","Warning","Error")]
+		[string]$MessageType = "Info",
+		[parameter(Mandatory=$true)]
+		[string]$Message,
+		[string]$Duration=10000
+	);
 
-[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null            
-$balloon = New-Object System.Windows.Forms.NotifyIcon                    
-$balloon.BalloonTipIcon = $MessageType            
-$balloon.BalloonTipText = $Message            
-$balloon.BalloonTipTitle = $Title       
-$balloon.Icon = $Icon     
-$balloon.Visible = $true            
-$balloon.ShowBalloonTip($Duration)  
-Start-Sleep -Milliseconds $Duration;
-$balloon.Dispose()        
-
+	[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;
+	$balloon = New-Object System.Windows.Forms.NotifyIcon;
+	$balloon.BalloonTipIcon = $MessageType;
+	$balloon.BalloonTipText = $Message;
+	$balloon.BalloonTipTitle = $Title;
+	$balloon.Icon = $Icon;
+	$balloon.Visible = $true;
+	$balloon.ShowBalloonTip($Duration);
+	Start-Sleep -Milliseconds $Duration;
+	$balloon.Dispose();
 }
 
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
@@ -36,27 +34,26 @@ write-host("This window will close automatically. Please wait... ");
 write-host;
 
 $contentTypeMap = @{
-    ".jpg"  = "image/jpeg";
-    ".jpeg" = "image/jpeg";
-    ".gif"  = "image/gif";
-    ".png"  = "image/png";
-    ".tiff" = "image/tiff";
+	".jpg"  = "image/jpeg";
+	".jpeg" = "image/jpeg";
+	".gif"  = "image/gif";
+	".png"  = "image/png";
+	".tiff" = "image/tiff";
   };
 
 $pattern = '(\w:.+?\.\w+)\s|(\w:.+?\.\w+)$';
 $matches = [regex]::matches($files, $pattern);
 $matchCount = $matches.count;
 
-$images = @{};
+$images = new-object System.Collections.ArrayList;
 
 for ($i = 0; $i -lt $matchCount; $i++) {
 	$file = $matches[$i].ToString().Trim();
-	
 	$dotPosition = $file.LastIndexOf('.');
 	$ext = $file.Substring($dotPosition).ToLower();
 
 	if ($contentTypeMap[$ext]) {
-		$images.Add($file, $contentTypeMap[$ext]);
+		[void]$images.Add($file);
 	};
 }
 
@@ -139,17 +136,17 @@ if ($filesCount -gt 1) {
 
 # 3rd req - upload
 
-foreach ($file in $images.Keys) {
+foreach ($file in $images) {
 
 	write-host $file;
 	
 	$url = 'http://imgur.com/upload';
 	$r = [System.Net.WebRequest]::Create($url);
-
+	
 	$r.AutomaticDecompression = [System.Net.DecompressionMethods]::Deflate, [System.Net.DecompressionMethods]::GZip; 
 	
 	$boundary = [System.Guid]::NewGuid().ToString();
-
+	
 	$r.ContentType = "multipart/form-data; boundary={0}" -f $boundary;
 	$r.Method = "POST";
 	$r.UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 OPR/36.0.2130.32";
@@ -168,7 +165,7 @@ foreach ($file in $images.Keys) {
 	$bytes = [System.IO.File]::ReadAllBytes($file);
 	$enc = [System.Text.Encoding]::GetEncoding(0);
 	$filedata = $enc.GetString($bytes);	
-
+	
 	$header = "--{0}" -f $boundary;
 	$footer = "--{0}--" -f $boundary;
 	[System.Text.StringBuilder]$contents = New-Object System.Text.StringBuilder;
@@ -228,7 +225,9 @@ foreach ($file in $images.Keys) {
 	[void]$contents.AppendLine($header);
 	$fileContentDisposition = 'Content-Disposition: form-data; name="Filedata"; filename="{0}"' -f $file;
 	[void]$contents.AppendLine($fileContentDisposition);
-	[void]$contents.AppendLine('Content-Type: {0}' -f $images.Item($file));
+	$dotPosition = $file.LastIndexOf('.');
+	$ext = $file.Substring($dotPosition).ToLower();
+	[void]$contents.AppendLine('Content-Type: {0}' -f $contentTypeMap[$ext]);
 	[void]$contents.AppendLine();
 	[void]$contents.AppendLine($filedata);
 	
@@ -291,4 +290,4 @@ $link | C:\Windows\System32\clip.exe;
 Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000
 	
 	
-# powershell
+powershell
