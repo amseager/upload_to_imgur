@@ -291,4 +291,4 @@ $link | C:\Windows\System32\clip.exe;
 Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000
 	
 	
-powershell
+# powershell
