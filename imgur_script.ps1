@@ -3,10 +3,104 @@ Param(
 );
 
 $CurrentDirectory = [environment]::CurrentDirectory;
-$Icon = "{0}\icon.ico" -f $CurrentDirectory;
+$Icon = "$CurrentDirectory\icon.ico";
+
+function Get-ResponseText {
+	param(
+		[parameter(Mandatory=$true)]
+		[System.Net.WebRequest] $request
+	);
+	$response = $request.GetResponse().GetResponseStream();
+	$sr = new-object System.IO.StreamReader $response;
+	$responseText = $sr.ReadToEnd();
+	return $responseText;
+}
+
+function Get-RegexMatch {
+	param(
+		[parameter(Mandatory=$true)] [string] $text,
+		[parameter(Mandatory=$true)] [string] $regex
+	);
+	$found = $text -match $regex;
+	if ($found) {
+		$match = $matches[1];
+	};
+	return $match;
+}
+
+function Get-RequestWithHeaders {
+	param(
+		[parameter(Mandatory=$true)] [string] $Url,
+		[ValidateSet('GET','POST')] [string] $Method = 'GET',
+		[bool] $KeepAlive = $true,
+		[string] $AutomaticDecompression = "Deflate, GZip",
+		[string] $Referer = "http://imgur.com/",
+		[string] $UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 OPR/36.0.2130.32",
+		[string] $Accept = "application/json, text/javascript, */*; q=0.01",
+		[string] $AcceptEncoding = "lzma, sdch",
+		[string] $AcceptLanguage = "ru-RU,ru;q=0.8,en-US;q=0.6,en;q=0.4",
+		[string] $XRequestedWith = "XMLHttpRequest",
+		[string] $CacheControl,		
+		[string] $ContentType,
+		[string] $Cookie,
+		[string] $Origin,
+		[string] $XImgur
+	);
+	$request = [System.Net.WebRequest]::Create($url);
+	
+	$request.Method = $Method;
+	$request.KeepAlive = $KeepAlive;
+	$request.AutomaticDecompression = $AutomaticDecompression;
+	$request.Referer = $Referer;
+	$request.UserAgent = $UserAgent;
+	$request.Accept = $Accept;
+	$request.Headers.Add("Accept-Encoding", $AcceptEncoding);
+	$request.Headers.Add("Accept-Language", $AcceptLanguage);
+	$request.Headers.Add("X-Requested-With", $XRequestedWith);
+	
+	if ($ContentType -ne '') 	{$request.ContentType = $ContentType};
+	if ($CacheControl -ne '') 	{$request.Headers.Add("Cache-Control", $CacheControl)};
+	if ($Cookie -ne '') 		{$request.Headers.Add("Cookie", $Cookie)};
+	if ($Origin -ne '') 		{$request.Headers.Add("Origin", $Origin)};
+	if ($XImgur -ne '') 		{$request.Headers.Add("X-Imgur", $XImgur)};
+	
+	return $request;
+}
+
+function Get-MultipartBytes {
+	param(
+		[parameter(Mandatory=$true)] [string] $boundary,
+		[parameter(Mandatory=$true)] [System.Collections.Specialized.OrderedDictionary]$bodyArgs,
+		[parameter(Mandatory=$true)] [string] $fileName,
+		[parameter(Mandatory=$true)] [string] $fileContentType
+	);
+	$enc = [System.Text.Encoding]::GetEncoding(0);
+	$fileDataBytes = [System.IO.File]::ReadAllBytes($file);
+	$fileData = $enc.GetString($fileDataBytes);	
+	
+	$header = "--$boundary";
+	$footer = "--$boundary--";
+	$contents = New-Object System.Text.StringBuilder;
+	
+	foreach ($arg in $bodyArgs.Keys) {
+		[void]$contents.AppendLine($header);
+		[void]$contents.AppendLine("Content-Disposition: form-data; name=`"$arg`"");
+		[void]$contents.AppendLine();
+		[void]$contents.AppendLine($bodyArgs.Item($arg));
+	}
+	[void]$contents.AppendLine($header);
+	[void]$contents.AppendLine("Content-Disposition: form-data; name=`"Filedata`"; filename=`"$fileName`"");
+	[void]$contents.AppendLine("Content-Type: $fileContentType");
+	[void]$contents.AppendLine();
+	[void]$contents.AppendLine($fileData);
+	[void]$contents.AppendLine($footer);
+	
+	[byte[]]$multipartBytes = $enc.GetBytes($contents.ToString());	
+	return $multipartBytes;
+}
 
 function Show-BalloonTip {
-	[cmdletbinding()]
+	[cmdletbinding(SupportsShouldProcess = $true)]
 	param(
 		[parameter(Mandatory=$true)]
 		[string]$Title,
@@ -14,19 +108,23 @@ function Show-BalloonTip {
 		[string]$MessageType = "Info",
 		[parameter(Mandatory=$true)]
 		[string]$Message,
-		[string]$Duration=10000
+		[string]$Duration = 10000,
+		[bool]$Dispose = $false
 	);
-
-	[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;
-	$balloon = New-Object System.Windows.Forms.NotifyIcon;
+	Add-Type -AssemblyName System.Windows.Forms;
+	if ($script:balloon -eq $null) {
+		$script:balloon = New-Object System.Windows.Forms.NotifyIcon;
+	}
 	$balloon.BalloonTipIcon = $MessageType;
 	$balloon.BalloonTipText = $Message;
 	$balloon.BalloonTipTitle = $Title;
 	$balloon.Icon = $Icon;
 	$balloon.Visible = $true;
 	$balloon.ShowBalloonTip($Duration);
-	Start-Sleep -Milliseconds $Duration;
-	$balloon.Dispose();
+	if ($Dispose -eq $true) {
+		Start-Sleep -Milliseconds $Duration;
+		$balloon.Dispose();
+	}
 }
 
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
@@ -51,231 +149,103 @@ for ($i = 0; $i -lt $matchCount; $i++) {
 	$file = $matches[$i].ToString().Trim();
 	$dotPosition = $file.LastIndexOf('.');
 	$ext = $file.Substring($dotPosition).ToLower();
-
 	if ($contentTypeMap[$ext]) {
 		[void]$images.Add($file);
 	};
 }
-
 $filesCount = $images.Count;
 
 if ($filesCount -eq 0) {
 	write-host('Nothing to upload');
-	Show-BalloonTip -Title 'Nothing to upload' -MessageType Error -Message "$matchCount files were submitted. None of them are images." -Duration 6000
+	Show-BalloonTip -Title 'Nothing to upload' -MessageType Error -Message "$matchCount files were submitted. None of them are images." -Duration 6000 -Dispose $true;
 	[Environment]::Exit(1);
 };
+Show-BalloonTip -Title "Uploading..." -MessageType Info -Message "Please wait" -Duration 1000;
 
-Show-BalloonTip -Title "Uploading..." -MessageType Info -Message "Please wait" -Duration 3000
 
 # 1st req - startsession
 
-$url = 'http://www.imgur.com/upload/start_session/';
-$r = [System.Net.WebRequest]::Create($url);
+$url = "http://www.imgur.com/upload/start_session/";
+$request = Get-RequestWithHeaders -Url $url;
+$responseText = Get-ResponseText -request $request;
 
-$r.KeepAlive="true";
-$r.Accept = "application/json, text/javascript, */*; q=0.01";
-$r.UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 OPR/36.0.2130.32";
-$r.Referer = "http://imgur.com/";
-
-$r.Headers.Add("Accept-Encoding", "gzip, deflate, lzma, sdch");
-$r.Headers.Add("Accept-Language", "ru-RU,ru;q=0.8,en-US;q=0.6,en;q=0.4");
-$r.Headers.Add("X-Requested-With", "XMLHttpRequest");
-
-$resp = $r.GetResponse().GetResponseStream();
-$sr = new-object System.IO.StreamReader $resp;
-$result = $sr.ReadToEnd();
-
-$found = $result -match '"sid":"(.+?)"';
-if ($found) {
-    $sid = $matches[1];
-};
-# write-host 'sid = {0}' -f $sid;
-
-$cookieSid = 'IMGURSESSION={0}' -f $sid;
-
+$sid = Get-RegexMatch -text $responseText -regex '"sid":"(.+?)"';
+$cookieSid = "IMGURSESSION=$sid";
 
 
 # 2nd req - checkcaptcha
 
-if ($filesCount -gt 1) {
-	$createAlbum = 1;
-} else {
-	$createAlbum = 0;
-};
+if ($filesCount -gt 1) {$createAlbum = 1;} else {$createAlbum = 0;};
 
-$url = 'http://imgur.com/upload/checkcaptcha?total_uploads={0}&create_album={1}&album_title=Optional+Album+Title' -f $filesCount, $createAlbum;
-$r = [System.Net.WebRequest]::Create($url);
+$url = "http://imgur.com/upload/checkcaptcha?total_uploads=$filesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
 
-$r.AutomaticDecompression = [System.Net.DecompressionMethods]::Deflate, [System.Net.DecompressionMethods]::GZip; 
+$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XImgur "1" -Cookie $cookieSid;
+$responseText = Get-ResponseText -request $request;
 
-$r.KeepAlive="true";
-$r.Accept = "*/*";
-$r.UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 OPR/36.0.2130.32";
-$r.Referer = "http://imgur.com/";
-
-$r.Headers.Add("Accept-Encoding", "gzip, deflate, lzma, sdch");
-$r.Headers.Add("Accept-Language", "ru-RU,ru;q=0.8,en-US;q=0.6,en;q=0.4");
-$r.Headers.Add("X-Requested-With", "XMLHttpRequest");
-$r.Headers.Add("X-Imgur", "1");
-
-$r.Headers.Add("Cookie", $cookieSid);
-
-$resp = $r.GetResponse().GetResponseStream();
-$sr = new-object System.IO.StreamReader $resp;
-$result = $sr.ReadToEnd();
-
-if ($filesCount -gt 1) {
-	$found = $result -match '"new_album_id":"(.+?)"';
-	if ($found) {
-		$newAlbumId = $matches[1];
-		# write-host('new_album_id = {0}' -f $newAlbumId);
-	};
-};
-
+if ($filesCount -gt 1) {$newAlbumId = Get-RegexMatch -text $responseText -regex '"new_album_id":"(.+?)"';};
 
 
 # 3rd req - upload
 
+$i = 1;
 foreach ($file in $images) {
 
 	write-host $file;
 	
-	$url = 'http://imgur.com/upload';
-	$r = [System.Net.WebRequest]::Create($url);
-	
-	$r.AutomaticDecompression = [System.Net.DecompressionMethods]::Deflate, [System.Net.DecompressionMethods]::GZip; 
-	
+	$url = "http://imgur.com/upload";
 	$boundary = [System.Guid]::NewGuid().ToString();
 	
-	$r.ContentType = "multipart/form-data; boundary={0}" -f $boundary;
-	$r.Method = "POST";
-	$r.UserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.75 Safari/537.36 OPR/36.0.2130.32";
-	$r.Accept = "application/json, text/javascript, */*; q=0.01";
-	$r.Referer = "http://imgur.com/";
-	$r.KeepAlive="true";
-	
-	$r.Headers.Add("Accept-Encoding", "gzip, deflate, lzma");
-	$r.Headers.Add("Accept-Language", "ru-RU,ru;q=0.8,en-US;q=0.6,en;q=0.4");
-	$r.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, post-check=0, pre-check=0");
-	$r.Headers.Add("Origin", "http://imgur.com");
-	$r.Headers.Add("X-Requested-With", "XMLHttpRequest");
-	
-	$r.Headers.Add("Cookie", $cookieSid);
-	
-	$bytes = [System.IO.File]::ReadAllBytes($file);
-	$enc = [System.Text.Encoding]::GetEncoding(0);
-	$filedata = $enc.GetString($bytes);	
-	
-	$header = "--{0}" -f $boundary;
-	$footer = "--{0}--" -f $boundary;
-	[System.Text.StringBuilder]$contents = New-Object System.Text.StringBuilder;
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="current_upload"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine($i + 1);
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="total_uploads"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine($filesCount);
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="terms"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine('0');
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="gallery_type"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine();
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="location"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine('outside');
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="gallery_submit"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine('0');
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="create_album"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine($createAlbum);
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="album_title"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine('Optional Album Title');
-	
-	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine('Content-Disposition: form-data; name="sid"');
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine($sid);
-	
-	if ($filesCount -gt 1) {
-		[void]$contents.AppendLine($header);
-		[void]$contents.AppendLine('Content-Disposition: form-data; name="new_album_id"');
-		[void]$contents.AppendLine();
-		[void]$contents.AppendLine($newAlbumId);
+	$uploadHeaders = @{
+		Url 			= $url;
+		Method 			= "POST";
+		ContentType 	= "multipart/form-data; boundary=$boundary";
+		CacheControl 	= "no-store, no-cache, must-revalidate, post-check=0, pre-check=0";
+		Origin 			= "http://imgur.com";
+		Cookie 			= $cookieSid;
 	};
+	$request = Get-RequestWithHeaders @uploadHeaders;
 	
-	[void]$contents.AppendLine($header);
-	$fileContentDisposition = 'Content-Disposition: form-data; name="Filedata"; filename="{0}"' -f $file;
-	[void]$contents.AppendLine($fileContentDisposition);
-	$dotPosition = $file.LastIndexOf('.');
-	$ext = $file.Substring($dotPosition).ToLower();
-	[void]$contents.AppendLine('Content-Type: {0}' -f $contentTypeMap[$ext]);
-	[void]$contents.AppendLine();
-	[void]$contents.AppendLine($filedata);
+	$uploadBodyArgs = New-Object System.Collections.Specialized.OrderedDictionary;
+	$uploadBodyArgs.Add("current_upload", $i++);
+	$uploadBodyArgs.Add("total_uploads", $filesCount);
+	$uploadBodyArgs.Add("terms", "0");
+	$uploadBodyArgs.Add("gallery_type", "");
+	$uploadBodyArgs.Add("location", "outside");
+	$uploadBodyArgs.Add("gallery_submit", "0");
+	$uploadBodyArgs.Add("create_album", $createAlbum);
+	$uploadBodyArgs.Add("album_title", "Optional Album Title");
+	$uploadBodyArgs.Add("sid", $sid);
+	if ($filesCount -gt 1) {$uploadBodyArgs.Add("new_album_id", $newAlbumId);};
 	
-	[void]$contents.AppendLine($footer);
+	$fileContentType = $contentTypeMap[$file.Substring($file.LastIndexOf(".")).ToLower()];
+	
+	$bytes = Get-MultipartBytes -boundary $boundary -bodyArgs $uploadBodyArgs -fileName $file -fileContentType $fileContentType;
+	$request.ContentLength = $bytes.Length;
 
-
-	$enc = [System.Text.Encoding]::GetEncoding(0);
-	[byte[]]$bytes = $enc.GetBytes($contents.ToString());
-	$r.ContentLength = $bytes.Length;
-
-	[System.IO.Stream]$reqStream = $r.GetRequestStream();
+	[System.IO.Stream]$reqStream = $request.GetRequestStream();
 	$reqStream.Write($bytes, 0, $bytes.Length);
 	$reqStream.Flush();
 	$reqStream.Close();
 	
-	$resp = $r.GetResponse().GetResponseStream();
-	
-	$sr = new-object System.IO.StreamReader $resp;
-	$result = $sr.ReadToEnd();
+	$responseText = Get-ResponseText -request $request;
 	
 	write-host("Uploaded.");
-	write-host;
-		
+	write-host;	
 };
-
 
 $date = Get-Date -UFormat "%d.%m.%y %T";
 
 if ($filesCount -eq 1) {
-
-	$found = $result -match '"hash":"(.+?)"'
-	if ($found) {
-		$hash = $matches[1];
-	};
-	# write-host('hash = {0}' -f $hash);
-
-	$link = 'http://i.imgur.com/{0}{1}' -f $hash, $ext;
-	$logFile = 'log_single.txt';
-	$logString = "{0}       [{1}] {2}" -f $link, $date, $file;
+	$hash = Get-RegexMatch -text $responseText -regex '"hash":"(.+?)"';
+	$link = "http://i.imgur.com/$hash$ext";
+	$logFile = "log_single.txt";
+	$logString = "$link       [$date] $file";
 	$title = "Image has been uploaded";
-
 } else {
-
-	$link = 'http://imgur.com/a/{0}' -f $newAlbumId;
+	$link = "http://imgur.com/a/$newAlbumId";
 	$logFile = 'log_albums.txt';
-	$logString = "{0}       [{1}]" -f $link, $date;
-	$title = "{0} images have been uploaded" -f $filesCount;
-	
+	$logString = "$link       [$date]";
+	$title = "$filesCount images have been uploaded";
 };
 
 $stream = New-Object System.IO.StreamWriter(New-Object IO.FileStream($logFile, [System.IO.FileMode]::Append));
@@ -287,7 +257,7 @@ write-host;
 	
 $link | C:\Windows\System32\clip.exe;
 
-Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000
+Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000 -Dispose $true;
 	
 	
-powershell
+# powershell
