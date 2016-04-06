@@ -1,7 +1,6 @@
 Param(
 	[String]$files
 );
-
 $CurrentDirectory = [environment]::CurrentDirectory;
 $Icon = "$CurrentDirectory\icon.ico";
 
@@ -22,9 +21,7 @@ function Get-RegexMatch {
 		[parameter(Mandatory=$true)] [string] $regex
 	);
 	$found = $text -match $regex;
-	if ($found) {
-		$match = $matches[1];
-	};
+	if ($found) {$match = $matches[1];};
 	return $match;
 }
 
@@ -71,7 +68,7 @@ function Get-MultipartBytes {
 	param(
 		[parameter(Mandatory=$true)] [string] $boundary,
 		[parameter(Mandatory=$true)] [System.Collections.Specialized.OrderedDictionary]$bodyArgs,
-		[parameter(Mandatory=$true)] [string] $fileName,
+		[parameter(Mandatory=$true)] [string] $file,
 		[parameter(Mandatory=$true)] [string] $fileContentType
 	);
 	$enc = [System.Text.Encoding]::GetEncoding(0);
@@ -81,6 +78,9 @@ function Get-MultipartBytes {
 	$header = "--$boundary";
 	$footer = "--$boundary--";
 	$contents = New-Object System.Text.StringBuilder;
+	if ($file.EndsWith('.jpg')) {
+		write-host 'yes'
+	}
 	
 	foreach ($arg in $bodyArgs.Keys) {
 		[void]$contents.AppendLine($header);
@@ -89,7 +89,7 @@ function Get-MultipartBytes {
 		[void]$contents.AppendLine($bodyArgs.Item($arg));
 	}
 	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine("Content-Disposition: form-data; name=`"Filedata`"; filename=`"$fileName`"");
+	[void]$contents.AppendLine("Content-Disposition: form-data; name=`"Filedata`"; filename=`"$file`"");
 	[void]$contents.AppendLine("Content-Type: $fileContentType");
 	[void]$contents.AppendLine();
 	[void]$contents.AppendLine($fileData);
@@ -102,14 +102,11 @@ function Get-MultipartBytes {
 function Show-BalloonTip {
 	[cmdletbinding(SupportsShouldProcess = $true)]
 	param(
-		[parameter(Mandatory=$true)]
-		[string]$Title,
-		[ValidateSet("Info","Warning","Error")]
-		[string]$MessageType = "Info",
-		[parameter(Mandatory=$true)]
-		[string]$Message,
-		[string]$Duration = 10000,
-		[bool]$Dispose = $false
+		[parameter(Mandatory=$true)] [string] $Title,
+		[ValidateSet("Info","Warning","Error")] [string] $MessageType = "Info",
+		[parameter(Mandatory=$true)] [string] $Message,
+		[string] $Duration = 10000,
+		[bool] $Dispose = $false
 	);
 	Add-Type -AssemblyName System.Windows.Forms;
 	if ($script:balloon -eq $null) {
@@ -121,10 +118,10 @@ function Show-BalloonTip {
 	$balloon.Icon = $Icon;
 	$balloon.Visible = $true;
 	$balloon.ShowBalloonTip($Duration);
-	if ($Dispose -eq $true) {
-		Start-Sleep -Milliseconds $Duration;
-		$balloon.Dispose();
-	}
+	# if ($Dispose -eq $true) {
+		# Start-Sleep -Milliseconds $Duration;
+		# $balloon.Dispose();
+	# }
 }
 
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
@@ -139,21 +136,9 @@ $contentTypeMap = @{
 	".tiff" = "image/tiff";
   };
 
-$pattern = '(\w:.+?\.\w+)\s|(\w:.+?\.\w+)$';
-$matches = [regex]::matches($files, $pattern);
-$matchCount = $matches.count;
-
-$images = new-object System.Collections.ArrayList;
-
-for ($i = 0; $i -lt $matchCount; $i++) {
-	$file = $matches[$i].ToString().Trim();
-	$dotPosition = $file.LastIndexOf('.');
-	$ext = $file.Substring($dotPosition).ToLower();
-	if ($contentTypeMap[$ext]) {
-		[void]$images.Add($file);
-	};
-}
-$filesCount = $images.Count;
+$pattern = "(?i)(\w:[^:]+?\.(?:jpg|jpeg|gif|png|tiff))";
+$images = [regex]::matches($files, $pattern);
+$filesCount = $images.count;
 
 if ($filesCount -eq 0) {
 	write-host('Nothing to upload');
@@ -188,8 +173,8 @@ if ($filesCount -gt 1) {$newAlbumId = Get-RegexMatch -text $responseText -regex 
 # 3rd req - upload
 
 $i = 1;
-foreach ($file in $images) {
-
+foreach ($imageMatch in $images) {
+	$file = $imageMatch.ToString();
 	write-host $file;
 	
 	$url = "http://imgur.com/upload";
@@ -217,9 +202,10 @@ foreach ($file in $images) {
 	$uploadBodyArgs.Add("sid", $sid);
 	if ($filesCount -gt 1) {$uploadBodyArgs.Add("new_album_id", $newAlbumId);};
 	
-	$fileContentType = $contentTypeMap[$file.Substring($file.LastIndexOf(".")).ToLower()];
+	$ext = $file.Substring($file.LastIndexOf(".")).ToLower();
+	$fileContentType = $contentTypeMap[$ext];
 	
-	$bytes = Get-MultipartBytes -boundary $boundary -bodyArgs $uploadBodyArgs -fileName $file -fileContentType $fileContentType;
+	$bytes = Get-MultipartBytes -boundary $boundary -bodyArgs $uploadBodyArgs -file $file -fileContentType $fileContentType;
 	$request.ContentLength = $bytes.Length;
 
 	[System.IO.Stream]$reqStream = $request.GetRequestStream();
@@ -260,4 +246,4 @@ $link | C:\Windows\System32\clip.exe;
 Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000 -Dispose $true;
 	
 	
-# powershell
+powershell
