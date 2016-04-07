@@ -25,6 +25,22 @@ function Get-RegexMatch {
 	return $match;
 }
 
+function Get-ContentType {
+	param(
+		[parameter(Mandatory=$true)] $file
+	)
+	$contentTypeMap = @{
+		".jpg"  = "image/jpeg";
+		".jpeg" = "image/jpeg";
+		".gif"  = "image/gif";
+		".png"  = "image/png";
+		".tiff" = "image/tiff";
+	};
+	$ext = $file.Substring($file.LastIndexOf(".")).ToLower();
+	$fileContentType = $contentTypeMap[$ext];
+	return $fileContentType;
+}
+
 function Get-RequestWithHeaders {
 	param(
 		[parameter(Mandatory=$true)] [string] $Url,
@@ -64,8 +80,9 @@ function Get-RequestWithHeaders {
 	return $request;
 }
 
-function Get-MultipartBytes {
+function Set-MultipartFormData {
 	param(
+		[parameter(Mandatory=$true)] [System.Net.WebRequest] $request,
 		[parameter(Mandatory=$true)] [string] $boundary,
 		[parameter(Mandatory=$true)] [System.Collections.Specialized.OrderedDictionary]$bodyArgs,
 		[parameter(Mandatory=$true)] [string] $file,
@@ -78,9 +95,6 @@ function Get-MultipartBytes {
 	$header = "--$boundary";
 	$footer = "--$boundary--";
 	$contents = New-Object System.Text.StringBuilder;
-	if ($file.EndsWith('.jpg')) {
-		write-host 'yes'
-	}
 	
 	foreach ($arg in $bodyArgs.Keys) {
 		[void]$contents.AppendLine($header);
@@ -95,8 +109,13 @@ function Get-MultipartBytes {
 	[void]$contents.AppendLine($fileData);
 	[void]$contents.AppendLine($footer);
 	
-	[byte[]]$multipartBytes = $enc.GetBytes($contents.ToString());	
-	return $multipartBytes;
+	[byte[]]$bytes = $enc.GetBytes($contents);
+	$request.ContentLength = $bytes.Length;
+
+	[System.IO.Stream]$reqStream = $request.GetRequestStream();
+	$reqStream.Write($bytes, 0, $bytes.Length);
+	$reqStream.Flush();
+	$reqStream.Close();
 }
 
 function Show-BalloonTip {
@@ -127,14 +146,6 @@ function Show-BalloonTip {
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
 write-host("This window will close automatically. Please wait... ");
 write-host;
-
-$contentTypeMap = @{
-	".jpg"  = "image/jpeg";
-	".jpeg" = "image/jpeg";
-	".gif"  = "image/gif";
-	".png"  = "image/png";
-	".tiff" = "image/tiff";
-  };
 
 $pattern = "(?i)(\w:[^:]+?\.(?:jpg|jpeg|gif|png|tiff))";
 $images = [regex]::matches($files, $pattern);
@@ -202,17 +213,10 @@ foreach ($imageMatch in $images) {
 	$uploadBodyArgs.Add("sid", $sid);
 	if ($filesCount -gt 1) {$uploadBodyArgs.Add("new_album_id", $newAlbumId);};
 	
-	$ext = $file.Substring($file.LastIndexOf(".")).ToLower();
-	$fileContentType = $contentTypeMap[$ext];
+	$fileContentType = Get-ContentType -file $file;
 	
-	$bytes = Get-MultipartBytes -boundary $boundary -bodyArgs $uploadBodyArgs -file $file -fileContentType $fileContentType;
-	$request.ContentLength = $bytes.Length;
+	Set-MultipartFormData -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -file $file -fileContentType $fileContentType;
 
-	[System.IO.Stream]$reqStream = $request.GetRequestStream();
-	$reqStream.Write($bytes, 0, $bytes.Length);
-	$reqStream.Flush();
-	$reqStream.Close();
-	
 	$responseText = Get-ResponseText -request $request;
 	
 	write-host("Uploaded.");
