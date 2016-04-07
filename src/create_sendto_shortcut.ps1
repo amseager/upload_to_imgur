@@ -1,6 +1,6 @@
 $CurrentDirectory = [environment]::CurrentDirectory;
-$TargetFile = "{0}\launcher.bat" -f $CurrentDirectory;
-$Icon = "{0}\icon.ico" -f $CurrentDirectory;
+$TargetFile = "{0}\src\launcher.bat" -f $CurrentDirectory;
+$Icon = "{0}\src\icon.ico" -f $CurrentDirectory;
 
 $ShortcutFile = "$env:APPDATA\Microsoft\Windows\SendTo\Imgur.lnk";
 $WScriptShell = New-Object -ComObject WScript.Shell;

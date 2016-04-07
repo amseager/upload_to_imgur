@@ -138,10 +138,10 @@ function Show-BalloonTip {
 	$balloon.Icon = $Icon;
 	$balloon.Visible = $true;
 	$balloon.ShowBalloonTip($Duration);
-	# if ($Dispose -eq $true) {
-		# Start-Sleep -Milliseconds $Duration;
-		# $balloon.Dispose();
-	# }
+	if ($Dispose -eq $true) {
+		Start-Sleep -Milliseconds $Duration;
+		$balloon.Dispose();
+	}
 }
 
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
@@ -154,7 +154,7 @@ $filesCount = $images.count;
 
 if ($filesCount -eq 0) {
 	write-host('Nothing to upload');
-	Show-BalloonTip -Title 'Nothing to upload' -MessageType Error -Message "$matchCount files were submitted. None of them are images." -Duration 6000 -Dispose $true;
+	Show-BalloonTip -Title 'Nothing to upload' -MessageType Error -Message "$filesCount files were submitted. None of them are images." -Duration 6000 -Dispose $true;
 	[Environment]::Exit(1);
 };
 Show-BalloonTip -Title "Uploading..." -MessageType Info -Message "Please wait" -Duration 1000;
@@ -251,4 +251,4 @@ $link | C:\Windows\System32\clip.exe;
 Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000 -Dispose $true;
 	
 	
-powershell
+# powershell
