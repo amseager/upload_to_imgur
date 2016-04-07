@@ -229,12 +229,12 @@ $date = Get-Date -UFormat "%d.%m.%y %T";
 if ($filesCount -eq 1) {
 	$hash = Get-RegexMatch -text $responseText -regex '"hash":"(.+?)"';
 	$link = "http://i.imgur.com/$hash.jpg";
-	$logFile = "log_single.txt";
+	$logFile = "../logs/log_single.txt";
 	$logString = "$link       [$date] $file";
 	$title = "Image has been uploaded";
 } else {
 	$link = "http://imgur.com/a/$newAlbumId";
-	$logFile = 'log_albums.txt';
+	$logFile = '../logs/log_albums.txt';
 	$logString = "$link       [$date]";
 	$title = "$filesCount images have been uploaded";
 };
