@@ -35,6 +35,7 @@ function Get-ContentType {
 		".gif"  = "image/gif";
 		".png"  = "image/png";
 		".tiff" = "image/tiff";
+		".pdf"  = "application/pdf";
 	};
 	$ext = $file.Substring($file.LastIndexOf(".")).ToLower();
 	$fileContentType = $contentTypeMap[$ext];
@@ -147,7 +148,7 @@ write-host("You'll get a direct link to your image in clipboard when the script 
 write-host("This window will close automatically. Please wait... ");
 write-host;
 
-$pattern = "(?i)(\w:[^:]+?\.(?:jpg|jpeg|gif|png|tiff))";
+$pattern = "(?i)(\w:[^:]+?\.(?:jpg|jpeg|gif|png|tiff|pdf))";
 $images = [regex]::matches($files, $pattern);
 $filesCount = $images.count;
 
@@ -227,7 +228,7 @@ $date = Get-Date -UFormat "%d.%m.%y %T";
 
 if ($filesCount -eq 1) {
 	$hash = Get-RegexMatch -text $responseText -regex '"hash":"(.+?)"';
-	$link = "http://i.imgur.com/$hash$ext";
+	$link = "http://i.imgur.com/$hash.jpg";
 	$logFile = "log_single.txt";
 	$logString = "$link       [$date] $file";
 	$title = "Image has been uploaded";
