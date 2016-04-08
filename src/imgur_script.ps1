@@ -1,5 +1,5 @@
 Param(
-	[String]$files
+	[String] $batArgs
 );
 $CurrentDirectory = [environment]::CurrentDirectory;
 $Icon = "$CurrentDirectory\icon.ico";
@@ -24,9 +24,9 @@ function Get-RegexMatch {
 	return $match;
 }
 
-function Get-ContentType {
+function Get-ImageContentType {
 	param(
-		[string] $file
+		[string] $image
 	)
 	$contentTypeMap = @{
 		".jpg"  = "image/jpeg";
@@ -36,9 +36,9 @@ function Get-ContentType {
 		".tiff" = "image/tiff";
 		".pdf"  = "application/pdf";
 	};
-	$ext = $file.Substring($file.LastIndexOf(".")).ToLower();
-	$fileContentType = $contentTypeMap[$ext];
-	return $fileContentType;
+	$ext = $image.Substring($image.LastIndexOf(".")).ToLower();
+	$imageContentType = $contentTypeMap[$ext];
+	return $imageContentType;
 }
 
 function Get-RequestWithHeaders {
@@ -87,12 +87,12 @@ function Set-MultipartBody {
 		[System.Net.WebRequest] $request,
 		[string] $boundary,
 		[System.Collections.Specialized.OrderedDictionary]$bodyArgs,
-		[string] $file,
-		[string] $fileContentType
+		[string] $image,
+		[string] $imageContentType
 	);
 	$enc = [System.Text.Encoding]::GetEncoding(0);
-	$fileDataBytes = [System.IO.File]::ReadAllBytes($file);
-	$fileData = $enc.GetString($fileDataBytes);	
+	$imageDataBytes = [System.IO.File]::ReadAllBytes($image);
+	$imageData = $enc.GetString($imageDataBytes);	
 	
 	$header = "--$boundary";
 	$footer = "--$boundary--";
@@ -105,10 +105,10 @@ function Set-MultipartBody {
 		[void]$contents.AppendLine($bodyArgs.Item($arg));
 	}
 	[void]$contents.AppendLine($header);
-	[void]$contents.AppendLine("Content-Disposition: form-data; name=`"Filedata`"; filename=`"$file`"");
-	[void]$contents.AppendLine("Content-Type: $fileContentType");
+	[void]$contents.AppendLine("Content-Disposition: form-data; name=`"Filedata`"; filename=`"$image`"");
+	[void]$contents.AppendLine("Content-Type: $imageContentType");
 	[void]$contents.AppendLine();
-	[void]$contents.AppendLine($fileData);
+	[void]$contents.AppendLine($imageData);
 	[void]$contents.AppendLine($footer);
 	
 	[byte[]]$bytes = $enc.GetBytes($contents);
@@ -219,7 +219,7 @@ function Show-CaptchaDialog {
 			XRequestedWith  = "XMLHttpRequest";
 		}
 		$request = Get-RequestWithHeaders @checkAgainHeaders;
-		$body ="recaptcha_challenge_field=$reload&recaptcha_response_field=$answer&total_uploads=$filesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
+		$body ="recaptcha_challenge_field=$reload&recaptcha_response_field=$answer&total_uploads=$imagesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
 		Set-UrlencodedBody -request $request -body $body;
 
 		$responseText = Get-ResponseText -request $request;
@@ -255,20 +255,35 @@ function Show-CaptchaDialog {
 	$form.ShowDialog() | Out-Null;
 }
 
+
+$allFiles = @();
+$allPattern = "(?i)(\w:[^:]+?)(?=\s\w:|$)";
+$allMatches = [regex]::matches($batArgs, $allPattern);
+
+foreach ($match in $allMatches) {
+	$path = $match.ToString();
+	$isDirectory = (Get-Item $path) -is [System.IO.DirectoryInfo];
+	if ($isDirectory) {
+		$filesInDirectory = Get-ChildItem $path -recurse | Where-Object {$_.PSIsContainer -eq $false} | % { $_.FullName }
+		$allFiles += $filesInDirectory;
+	} else {
+		$allFiles += $path;
+	}
+}
+$imagePattern = "(?i)(\w:[^:]+?\.(?:jpg|jpeg|gif|png|tiff|pdf))";
+$images = [regex]::matches($allFiles, $imagePattern);
+$imagesCount = $images.count;
+
+if ($imagesCount -eq 0) {
+	write-host("Nothing to upload");
+	Show-BalloonTip -Title "Nothing to upload" -MessageType Error -Message "No images were submitted" -Duration 6000 -Dispose $true;
+	[Environment]::Exit(1);
+};
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
 write-host("This window will close automatically. Please wait... ");
 write-host;
-
-$pattern = "(?i)(\w:[^:]+?\.(?:jpg|jpeg|gif|png|tiff|pdf))";
-$images = [regex]::matches($files, $pattern);
-$filesCount = $images.count;
-
-if ($filesCount -eq 0) {
-	write-host('Nothing to upload');
-	Show-BalloonTip -Title 'Nothing to upload' -MessageType Error -Message "$filesCount files were submitted. None of them are images." -Duration 6000 -Dispose $true;
-	[Environment]::Exit(1);
-};
-Show-BalloonTip -Title "Uploading..." -MessageType Info -Message "Please wait" -Duration 1000;
+if ($imagesCount -eq 1) {$uploadingTitle = "Uploading image..."} else {$uploadingTitle = "Uploading $imagesCount images..."};
+Show-BalloonTip -Title $uploadingTitle -MessageType Info -Message "Please wait" -Duration 1000;
 
 
 # 1st req - startsession
@@ -283,9 +298,9 @@ $cookieSid = "IMGURSESSION=$sid";
 
 # 2nd req - checkcaptcha
 
-if ($filesCount -gt 1) {$createAlbum = 1;} else {$createAlbum = 0;};
+if ($imagesCount -gt 1) {$createAlbum = 1;} else {$createAlbum = 0;};
 
-$url = "http://imgur.com/upload/checkcaptcha?total_uploads=$filesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
+$url = "http://imgur.com/upload/checkcaptcha?total_uploads=$imagesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
 $request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XImgur "1" -XRequestedWith "XMLHttpRequest" -Cookie $cookieSid;
 $responseText = Get-ResponseText -request $request;
 
@@ -312,15 +327,14 @@ if ($responseText -like '*"overLimits":1*') {
 	Show-CaptchaDialog -reload $reload -respImage $respImage;
 }
 
-if ($filesCount -gt 1) {$newAlbumId = Get-RegexMatch -text $responseText -regex '"new_album_id":"(.+?)"';};
+if ($imagesCount -gt 1) {$newAlbumId = Get-RegexMatch -text $responseText -regex '"new_album_id":"(.+?)"';};
 
 
 # 3rd req - upload
 
 $i = 1;
-foreach ($imageMatch in $images) {
-	$file = $imageMatch.ToString();
-	write-host $file;
+foreach ($image in $images) {
+	write-host $image;
 	
 	$url = "http://imgur.com/upload";
 	$boundary = [System.Guid]::NewGuid().ToString();
@@ -337,7 +351,7 @@ foreach ($imageMatch in $images) {
 	
 	$uploadBodyArgs = New-Object System.Collections.Specialized.OrderedDictionary;
 	$uploadBodyArgs.Add("current_upload", $i++);
-	$uploadBodyArgs.Add("total_uploads", $filesCount);
+	$uploadBodyArgs.Add("total_uploads", $imagesCount);
 	$uploadBodyArgs.Add("terms", "0");
 	$uploadBodyArgs.Add("gallery_type", "");
 	$uploadBodyArgs.Add("location", "outside");
@@ -345,12 +359,12 @@ foreach ($imageMatch in $images) {
 	$uploadBodyArgs.Add("create_album", $createAlbum);
 	$uploadBodyArgs.Add("album_title", "Optional Album Title");
 	$uploadBodyArgs.Add("sid", $sid);
-	if ($filesCount -gt 1) {$uploadBodyArgs.Add("new_album_id", $newAlbumId);};
+	if ($imagesCount -gt 1) {$uploadBodyArgs.Add("new_album_id", $newAlbumId);};
 	
-	$fileContentType = Get-ContentType -file $file;
+	$imageContentType = Get-ImageContentType -image $image;
 	
 	$request = Get-RequestWithHeaders @uploadHeaders;
-	Set-MultipartBody -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -file $file -fileContentType $fileContentType;
+	Set-MultipartBody -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -image $image -imageContentType $imageContentType;
 
 	$responseText = Get-ResponseText -request $request;
 	
@@ -360,17 +374,17 @@ foreach ($imageMatch in $images) {
 
 $date = Get-Date -UFormat "%d.%m.%y %T";
 
-if ($filesCount -eq 1) {
+if ($imagesCount -eq 1) {
 	$hash = Get-RegexMatch -text $responseText -regex '"hash":"(.+?)"';
 	$link = "http://i.imgur.com/$hash.jpg";
 	$logFile = "../logs/log_single.txt";
-	$logString = "$link       [$date] $file";
+	$logString = "$link       [$date] $image";
 	$title = "Image has been uploaded";
 } else {
 	$link = "http://imgur.com/a/$newAlbumId";
 	$logFile = '../logs/log_albums.txt';
 	$logString = "$link       [$date]";
-	$title = "$filesCount images have been uploaded";
+	$title = "$imagesCount images have been uploaded";
 };
 
 $stream = New-Object System.IO.StreamWriter(New-Object IO.FileStream($logFile, [System.IO.FileMode]::Append));
