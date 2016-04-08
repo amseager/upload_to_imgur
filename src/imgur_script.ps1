@@ -6,7 +6,6 @@ $Icon = "$CurrentDirectory\icon.ico";
 
 function Get-ResponseText {
 	param(
-		[parameter(Mandatory=$true)]
 		[System.Net.WebRequest] $request
 	);
 	$response = $request.GetResponse().GetResponseStream();
@@ -17,8 +16,8 @@ function Get-ResponseText {
 
 function Get-RegexMatch {
 	param(
-		[parameter(Mandatory=$true)] [string] $text,
-		[parameter(Mandatory=$true)] [string] $regex
+		 [string] $text,
+		 [string] $regex
 	);
 	$found = $text -match $regex;
 	if ($found) {$match = $matches[1];};
@@ -27,7 +26,7 @@ function Get-RegexMatch {
 
 function Get-ContentType {
 	param(
-		[parameter(Mandatory=$true)] $file
+		[string] $file
 	)
 	$contentTypeMap = @{
 		".jpg"  = "image/jpeg";
@@ -44,7 +43,7 @@ function Get-ContentType {
 
 function Get-RequestWithHeaders {
 	param(
-		[parameter(Mandatory=$true)] [string] $Url,
+		[string] $Url,
 		[ValidateSet('GET','POST')] [string] $Method = 'GET',
 		[bool] $KeepAlive = $true,
 		[string] $AutomaticDecompression = "Deflate, GZip",
@@ -53,12 +52,13 @@ function Get-RequestWithHeaders {
 		[string] $Accept = "application/json, text/javascript, */*; q=0.01",
 		[string] $AcceptEncoding = "lzma, sdch",
 		[string] $AcceptLanguage = "ru-RU,ru;q=0.8,en-US;q=0.6,en;q=0.4",
-		[string] $XRequestedWith = "XMLHttpRequest",
 		[string] $CacheControl,		
 		[string] $ContentType,
 		[string] $Cookie,
 		[string] $Origin,
-		[string] $XImgur
+		[string] $XImgur,
+		[string] $XRequestedWith,
+		[string] $XClientData
 	);
 	$request = [System.Net.WebRequest]::Create($url);
 	
@@ -70,24 +70,25 @@ function Get-RequestWithHeaders {
 	$request.Accept = $Accept;
 	$request.Headers.Add("Accept-Encoding", $AcceptEncoding);
 	$request.Headers.Add("Accept-Language", $AcceptLanguage);
-	$request.Headers.Add("X-Requested-With", $XRequestedWith);
 	
 	if ($ContentType -ne '') 	{$request.ContentType = $ContentType};
 	if ($CacheControl -ne '') 	{$request.Headers.Add("Cache-Control", $CacheControl)};
 	if ($Cookie -ne '') 		{$request.Headers.Add("Cookie", $Cookie)};
 	if ($Origin -ne '') 		{$request.Headers.Add("Origin", $Origin)};
 	if ($XImgur -ne '') 		{$request.Headers.Add("X-Imgur", $XImgur)};
+	if ($XRequestedWith -ne '') {$request.Headers.Add("X-Requested-With", $XRequestedWith)};
+	if ($XClientData -ne '') 	{$request.Headers.Add("X-Client-Data", $XClientData)};
 	
 	return $request;
 }
 
-function Set-MultipartFormData {
+function Set-MultipartBody {
 	param(
-		[parameter(Mandatory=$true)] [System.Net.WebRequest] $request,
-		[parameter(Mandatory=$true)] [string] $boundary,
-		[parameter(Mandatory=$true)] [System.Collections.Specialized.OrderedDictionary]$bodyArgs,
-		[parameter(Mandatory=$true)] [string] $file,
-		[parameter(Mandatory=$true)] [string] $fileContentType
+		[System.Net.WebRequest] $request,
+		[string] $boundary,
+		[System.Collections.Specialized.OrderedDictionary]$bodyArgs,
+		[string] $file,
+		[string] $fileContentType
 	);
 	$enc = [System.Text.Encoding]::GetEncoding(0);
 	$fileDataBytes = [System.IO.File]::ReadAllBytes($file);
@@ -119,12 +120,27 @@ function Set-MultipartFormData {
 	$reqStream.Close();
 }
 
+function Set-UrlencodedBody {
+	param(
+		[System.Net.WebRequest] $request,
+		[string] $urlencodedBody
+	);
+	$enc = [System.Text.Encoding]::GetEncoding(0);
+	[byte[]]$bytes = $enc.GetBytes($body);
+	$request.ContentLength = $bytes.Length;
+
+	[System.IO.Stream]$reqStream = $request.GetRequestStream();
+	$reqStream.Write($bytes, 0, $bytes.Length);
+	$reqStream.Flush();
+	$reqStream.Close();
+}
+
 function Show-BalloonTip {
 	[cmdletbinding(SupportsShouldProcess = $true)]
 	param(
-		[parameter(Mandatory=$true)] [string] $Title,
+		[string] $Title,
 		[ValidateSet("Info","Warning","Error")] [string] $MessageType = "Info",
-		[parameter(Mandatory=$true)] [string] $Message,
+		[string] $Message,
 		[string] $Duration = 10000,
 		[bool] $Dispose = $false
 	);
@@ -142,6 +158,101 @@ function Show-BalloonTip {
 		Start-Sleep -Milliseconds $Duration;
 		$balloon.Dispose();
 	}
+}
+
+function Show-CaptchaDialog {
+	param(
+		[string] $reload,
+		[System.IO.Stream] $respImage
+	)
+	$form = New-Object System.Windows.Forms.Form;
+	$form.StartPosition  = "CenterScreen";
+	$form.Text = "Enter captcha";
+	
+	$pictureBox = new-object Windows.Forms.PictureBox;
+	$pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::AutoSize;
+	$pictureBox.Image = New-Object System.Drawing.Bitmap($respImage);
+	$pictureBox.Location = New-Object System.Drawing.Point(50,10);
+	
+	$textBox = New-Object System.Windows.Forms.TextBox;
+	$textBox.Font = New-Object Drawing.Font("Microsoft Sans Serif", 14);
+	$textBox.Width = 200;
+	$textBox.Location = New-Object System.Drawing.Point(10,80);
+	
+	$errorLabel = New-Object System.Windows.Forms.Label;
+	$errorLabel.Font = New-Object Drawing.Font("Microsoft Sans Serif", 12);
+	$errorLabel.Text = "";
+	$errorLabel.ForeColor = "Red";
+	$errorLabel.Location = New-Object System.Drawing.Point(20,110);
+	
+	$buttonReload = New-Object System.Windows.Forms.Button;
+	$buttonReload.Location = New-Object System.Drawing.Point(300,80);
+	$buttonReload.Height = 30;
+	$buttonReload.Text = "Reload";
+	$buttonReload.add_click({ 
+		$url = "http://www.google.com/recaptcha/api/reload?c=$reload&k=$k&reason=r&type=image&lang=ru";
+		$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
+		$responseText = Get-ResponseText -request $request;
+		$reload = Get-RegexMatch -text $responseText -regex "Recaptcha.finish_reload\('(.+?)', 'image', null, null\);";
+		
+		$url = "http://www.google.com/recaptcha/api/image?c=$reload";
+		$request = Get-RequestWithHeaders -Url $url -Accept "image/webp,image/*,*/*;q=0.8" -XClientData $xcd;
+		$respImage = $request.GetResponse().GetResponseStream();
+		$pictureBox.Image = New-Object System.Drawing.Bitmap($respImage);
+		$errorLabel.Text = "";
+	});
+	
+	$buttonOk = New-Object System.Windows.Forms.Button;
+	$buttonOk.Location = New-Object System.Drawing.Point(215,80);
+	$buttonOk.Height = 30;
+	$buttonOk.Text = "OK";
+	$buttonOk.add_click({ 
+		$answer = $textBox.Text -replace " ", "+";
+		$url = "http://imgur.com/upload/checkcaptcha";
+		$checkAgainHeaders = @{
+			Url 			= $url;
+			Method 			= "POST";
+			ContentType 	= "application/x-www-form-urlencoded; charset=UTF-8";
+			Accept 			= "*/*";
+			Origin 			= "http://imgur.com";
+			Cookie 			= $cookieSid;
+			XRequestedWith  = "XMLHttpRequest";
+		}
+		$request = Get-RequestWithHeaders @checkAgainHeaders;
+		$body ="recaptcha_challenge_field=$reload&recaptcha_response_field=$answer&total_uploads=$filesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
+		Set-UrlencodedBody -request $request -body $body;
+
+		$responseText = Get-ResponseText -request $request;
+		$error = Get-RegexMatch -text $responseText -regex '"error":"(.+?)"';
+		
+		if ($error) {
+			$errorLabel.Text = $error.ToString();
+			
+			$url = "http://www.google.com/recaptcha/api/reload?c=$reload&k=$k&reason=r&type=image&lang=ru";
+			$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
+			$responseText = Get-ResponseText -request $request;
+			$reload = Get-RegexMatch -text $responseText -regex "Recaptcha.finish_reload\('(.+?)', 'image', null, null\);";
+			
+			$url = "http://www.google.com/recaptcha/api/image?c=$reload";
+			$request = Get-RequestWithHeaders -Url $url -Accept "image/webp,image/*,*/*;q=0.8" -XClientData $xcd;
+			$respImage = $request.GetResponse().GetResponseStream();
+			$pictureBox.Image = New-Object System.Drawing.Bitmap($respImage);
+		} else {
+			$errorLabel.Text = "";
+			$form.Close();
+		}
+	});
+	$form.controls.add($pictureBox);
+	$form.controls.add($textBox);
+	$form.controls.add($buttonReload);
+	$form.controls.add($buttonOk);
+	$form.controls.add($errorLabel);
+
+	$form.Width = 300;
+	$form.Height = 160;
+	$form.AutoSize = $True;
+	$form.AcceptButton = $buttonOk;
+	$form.ShowDialog() | Out-Null;
 }
 
 write-host("You'll get a direct link to your image in clipboard when the script passes.");
@@ -163,7 +274,7 @@ Show-BalloonTip -Title "Uploading..." -MessageType Info -Message "Please wait" -
 # 1st req - startsession
 
 $url = "http://www.imgur.com/upload/start_session/";
-$request = Get-RequestWithHeaders -Url $url;
+$request = Get-RequestWithHeaders -Url $url -XRequestedWith "XMLHttpRequest";
 $responseText = Get-ResponseText -request $request;
 
 $sid = Get-RegexMatch -text $responseText -regex '"sid":"(.+?)"';
@@ -175,9 +286,31 @@ $cookieSid = "IMGURSESSION=$sid";
 if ($filesCount -gt 1) {$createAlbum = 1;} else {$createAlbum = 0;};
 
 $url = "http://imgur.com/upload/checkcaptcha?total_uploads=$filesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
-
-$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XImgur "1" -Cookie $cookieSid;
+$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XImgur "1" -XRequestedWith "XMLHttpRequest" -Cookie $cookieSid;
 $responseText = Get-ResponseText -request $request;
+
+if ($responseText -like '*"overLimits":1*') {
+	
+	$k = '6LeZbt4SAAAAAKEsafT3QzEFp5vJ1-Z23uy5mPDz';
+	$xcd = "CIu2yQEIpbbJAQjEtskBCP2VygE=";
+	
+	# challenge
+	$url = "http://www.google.com/recaptcha/api/challenge?k=$k&ajax=1";
+	$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
+	$responseText = Get-ResponseText -request $request;
+	$challenge = Get-RegexMatch -text $responseText -regex "challenge : '(.+?)'";
+	#reload
+	$url = "http://www.google.com/recaptcha/api/reload?c=$challenge&k=$k&reason=i&type=image&lang=ru";
+	$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
+	$responseText = Get-ResponseText -request $request;
+	$reload = Get-RegexMatch -text $responseText -regex "Recaptcha.finish_reload\('(.+?)', 'image', null, null\);";
+	# download image
+	$url = "http://www.google.com/recaptcha/api/image?c=$reload";
+	$request = Get-RequestWithHeaders -Url $url -Accept "image/webp,image/*,*/*;q=0.8" -XClientData $xcd;
+	$respImage = $request.GetResponse().GetResponseStream();
+	
+	Show-CaptchaDialog -reload $reload -respImage $respImage;
+}
 
 if ($filesCount -gt 1) {$newAlbumId = Get-RegexMatch -text $responseText -regex '"new_album_id":"(.+?)"';};
 
@@ -199,8 +332,8 @@ foreach ($imageMatch in $images) {
 		CacheControl 	= "no-store, no-cache, must-revalidate, post-check=0, pre-check=0";
 		Origin 			= "http://imgur.com";
 		Cookie 			= $cookieSid;
+		XRequestedWith  = "XMLHttpRequest";
 	};
-	$request = Get-RequestWithHeaders @uploadHeaders;
 	
 	$uploadBodyArgs = New-Object System.Collections.Specialized.OrderedDictionary;
 	$uploadBodyArgs.Add("current_upload", $i++);
@@ -216,7 +349,8 @@ foreach ($imageMatch in $images) {
 	
 	$fileContentType = Get-ContentType -file $file;
 	
-	Set-MultipartFormData -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -file $file -fileContentType $fileContentType;
+	$request = Get-RequestWithHeaders @uploadHeaders;
+	Set-MultipartBody -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -file $file -fileContentType $fileContentType;
 
 	$responseText = Get-ResponseText -request $request;
 	
@@ -251,4 +385,4 @@ $link | C:\Windows\System32\clip.exe;
 Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000 -Dispose $true;
 	
 	
-# powershell
+powershell
