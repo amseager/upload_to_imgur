@@ -183,7 +183,7 @@ function Show-CaptchaDialog {
 	$errorLabel.Font = New-Object Drawing.Font("Microsoft Sans Serif", 12);
 	$errorLabel.Text = "";
 	$errorLabel.ForeColor = "Red";
-	$errorLabel.Location = New-Object System.Drawing.Point(20,110);
+	$errorLabel.Location = New-Object System.Drawing.Point(10,110);
 	
 	$buttonReload = New-Object System.Windows.Forms.Button;
 	$buttonReload.Location = New-Object System.Drawing.Point(300,80);
@@ -223,11 +223,11 @@ function Show-CaptchaDialog {
 		Set-UrlencodedBody -request $request -body $body;
 
 		$responseText = Get-ResponseText -request $request;
-		$error = Get-RegexMatch -text $responseText -regex '"error":"(.+?)"';
 		
-		if ($error) {
-			$errorLabel.Text = $error.ToString();
-			
+		# $error = Get-RegexMatch -text $responseText -regex '"error":"(.+?)"';
+		if ($responseText -like '*"error":"incorrect text"*') {
+		# if ($error) {
+			$errorLabel.Text = "incorrect text";
 			$url = "http://www.google.com/recaptcha/api/reload?c=$reload&k=$k&reason=r&type=image&lang=ru";
 			$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
 			$responseText = Get-ResponseText -request $request;
@@ -348,7 +348,6 @@ foreach ($image in $images) {
 		Cookie 			= $cookieSid;
 		XRequestedWith  = "XMLHttpRequest";
 	};
-	
 	$uploadBodyArgs = New-Object System.Collections.Specialized.OrderedDictionary;
 	$uploadBodyArgs.Add("current_upload", $i++);
 	$uploadBodyArgs.Add("total_uploads", $imagesCount);
@@ -363,11 +362,23 @@ foreach ($image in $images) {
 	
 	$imageContentType = Get-ImageContentType -image $image;
 	
-	$request = Get-RequestWithHeaders @uploadHeaders;
-	Set-MultipartBody -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -image $image -imageContentType $imageContentType;
-
-	$responseText = Get-ResponseText -request $request;
-	
+	$isUploadSuccessful = $false;
+	while ($isUploadSuccessful -eq $false) {
+		try {
+			$request = Get-RequestWithHeaders @uploadHeaders;
+			Set-MultipartBody -request $request -boundary $boundary -bodyArgs $uploadBodyArgs -image $image -imageContentType $imageContentType;
+			$response = $request.GetResponse();
+			$isUploadSuccessful = $true;
+		} catch [System.Net.WebException] {
+			$statusCode = [int]$_.Exception.Response.StatusCode
+			if ($statusCode -eq 500) {
+				Start-Sleep -s 10;
+			} else {
+				Show-BalloonTip -Title "Error code $statusCode" -MessageType Info -Message "Please try again later" -Duration 6000 -Dispose $true;
+				[Environment]::Exit(1);
+			}
+		}
+	}
 	write-host("Uploaded.");
 	write-host;	
 };
@@ -375,6 +386,7 @@ foreach ($image in $images) {
 $date = Get-Date -UFormat "%d.%m.%y %T";
 
 if ($imagesCount -eq 1) {
+	$responseText = Get-ResponseText -request $request;
 	$hash = Get-RegexMatch -text $responseText -regex '"hash":"(.+?)"';
 	$link = "http://i.imgur.com/$hash.jpg";
 	$logFile = "../logs/log_single.txt";
