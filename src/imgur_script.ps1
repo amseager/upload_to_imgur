@@ -56,9 +56,7 @@ function Get-RequestWithHeaders {
 		[string] $ContentType,
 		[string] $Cookie,
 		[string] $Origin,
-		[string] $XImgur,
-		[string] $XRequestedWith,
-		[string] $XClientData
+		[string] $XImgur
 	);
 	$request = [System.Net.WebRequest]::Create($url);
 	
@@ -76,8 +74,6 @@ function Get-RequestWithHeaders {
 	if ($Cookie -ne '') 		{$request.Headers.Add("Cookie", $Cookie)};
 	if ($Origin -ne '') 		{$request.Headers.Add("Origin", $Origin)};
 	if ($XImgur -ne '') 		{$request.Headers.Add("X-Imgur", $XImgur)};
-	if ($XRequestedWith -ne '') {$request.Headers.Add("X-Requested-With", $XRequestedWith)};
-	if ($XClientData -ne '') 	{$request.Headers.Add("X-Client-Data", $XClientData)};
 	
 	return $request;
 }
@@ -160,101 +156,6 @@ function Show-BalloonTip {
 	}
 }
 
-function Show-CaptchaDialog {
-	param(
-		[string] $reload,
-		[System.IO.Stream] $respImage
-	)
-	$form = New-Object System.Windows.Forms.Form;
-	$form.StartPosition  = "CenterScreen";
-	$form.Text = "Enter captcha";
-	
-	$pictureBox = new-object Windows.Forms.PictureBox;
-	$pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::AutoSize;
-	$pictureBox.Image = New-Object System.Drawing.Bitmap($respImage);
-	$pictureBox.Location = New-Object System.Drawing.Point(50,10);
-	
-	$textBox = New-Object System.Windows.Forms.TextBox;
-	$textBox.Font = New-Object Drawing.Font("Microsoft Sans Serif", 14);
-	$textBox.Width = 200;
-	$textBox.Location = New-Object System.Drawing.Point(10,80);
-	
-	$errorLabel = New-Object System.Windows.Forms.Label;
-	$errorLabel.Font = New-Object Drawing.Font("Microsoft Sans Serif", 12);
-	$errorLabel.Text = "";
-	$errorLabel.ForeColor = "Red";
-	$errorLabel.Location = New-Object System.Drawing.Point(10,110);
-	
-	$buttonReload = New-Object System.Windows.Forms.Button;
-	$buttonReload.Location = New-Object System.Drawing.Point(300,80);
-	$buttonReload.Height = 30;
-	$buttonReload.Text = "Reload";
-	$buttonReload.add_click({ 
-		$url = "http://www.google.com/recaptcha/api/reload?c=$reload&k=$k&reason=r&type=image&lang=ru";
-		$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
-		$responseText = Get-ResponseText -request $request;
-		$reload = Get-RegexMatch -text $responseText -regex "Recaptcha.finish_reload\('(.+?)', 'image', null, null\);";
-		
-		$url = "http://www.google.com/recaptcha/api/image?c=$reload";
-		$request = Get-RequestWithHeaders -Url $url -Accept "image/webp,image/*,*/*;q=0.8" -XClientData $xcd;
-		$respImage = $request.GetResponse().GetResponseStream();
-		$pictureBox.Image = New-Object System.Drawing.Bitmap($respImage);
-		$errorLabel.Text = "";
-	});
-	
-	$buttonOk = New-Object System.Windows.Forms.Button;
-	$buttonOk.Location = New-Object System.Drawing.Point(215,80);
-	$buttonOk.Height = 30;
-	$buttonOk.Text = "OK";
-	$buttonOk.add_click({ 
-		$answer = $textBox.Text -replace " ", "+";
-		$url = "http://imgur.com/upload/checkcaptcha";
-		$checkAgainHeaders = @{
-			Url 			= $url;
-			Method 			= "POST";
-			ContentType 	= "application/x-www-form-urlencoded; charset=UTF-8";
-			Accept 			= "*/*";
-			Origin 			= "http://imgur.com";
-			Cookie 			= $cookieSid;
-			XRequestedWith  = "XMLHttpRequest";
-		}
-		$request = Get-RequestWithHeaders @checkAgainHeaders;
-		$body ="recaptcha_challenge_field=$reload&recaptcha_response_field=$answer&total_uploads=$imagesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
-		Set-UrlencodedBody -request $request -body $body;
-
-		$responseText = Get-ResponseText -request $request;
-		
-		# $error = Get-RegexMatch -text $responseText -regex '"error":"(.+?)"';
-		if ($responseText -like '*"error":"incorrect text"*') {
-		# if ($error) {
-			$errorLabel.Text = "incorrect text";
-			$url = "http://www.google.com/recaptcha/api/reload?c=$reload&k=$k&reason=r&type=image&lang=ru";
-			$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
-			$responseText = Get-ResponseText -request $request;
-			$reload = Get-RegexMatch -text $responseText -regex "Recaptcha.finish_reload\('(.+?)', 'image', null, null\);";
-			
-			$url = "http://www.google.com/recaptcha/api/image?c=$reload";
-			$request = Get-RequestWithHeaders -Url $url -Accept "image/webp,image/*,*/*;q=0.8" -XClientData $xcd;
-			$respImage = $request.GetResponse().GetResponseStream();
-			$pictureBox.Image = New-Object System.Drawing.Bitmap($respImage);
-		} else {
-			$errorLabel.Text = "";
-			$form.Close();
-		}
-	});
-	$form.controls.add($pictureBox);
-	$form.controls.add($textBox);
-	$form.controls.add($buttonReload);
-	$form.controls.add($buttonOk);
-	$form.controls.add($errorLabel);
-
-	$form.Width = 300;
-	$form.Height = 160;
-	$form.AutoSize = $True;
-	$form.AcceptButton = $buttonOk;
-	$form.ShowDialog() | Out-Null;
-}
-
 
 $allFiles = @();
 $allPattern = "(?i)(\w:[^:]+?)(?=\s\w:|$)";
@@ -303,29 +204,6 @@ if ($imagesCount -gt 1) {$createAlbum = 1;} else {$createAlbum = 0;};
 $url = "http://imgur.com/upload/checkcaptcha?total_uploads=$imagesCount&create_album=$createAlbum&album_title=Optional+Album+Title";
 $request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XImgur "1" -XRequestedWith "XMLHttpRequest" -Cookie $cookieSid;
 $responseText = Get-ResponseText -request $request;
-
-if ($responseText -like '*"overLimits":1*') {
-	
-	$k = '6LeZbt4SAAAAAKEsafT3QzEFp5vJ1-Z23uy5mPDz';
-	$xcd = "CIu2yQEIpbbJAQjEtskBCP2VygE=";
-	
-	# challenge
-	$url = "http://www.google.com/recaptcha/api/challenge?k=$k&ajax=1";
-	$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
-	$responseText = Get-ResponseText -request $request;
-	$challenge = Get-RegexMatch -text $responseText -regex "challenge : '(.+?)'";
-	#reload
-	$url = "http://www.google.com/recaptcha/api/reload?c=$challenge&k=$k&reason=i&type=image&lang=ru";
-	$request = Get-RequestWithHeaders -Url $url -Accept "*/*" -XClientData $xcd;
-	$responseText = Get-ResponseText -request $request;
-	$reload = Get-RegexMatch -text $responseText -regex "Recaptcha.finish_reload\('(.+?)', 'image', null, null\);";
-	# download image
-	$url = "http://www.google.com/recaptcha/api/image?c=$reload";
-	$request = Get-RequestWithHeaders -Url $url -Accept "image/webp,image/*,*/*;q=0.8" -XClientData $xcd;
-	$respImage = $request.GetResponse().GetResponseStream();
-	
-	Show-CaptchaDialog -reload $reload -respImage $respImage;
-}
 
 if ($imagesCount -gt 1) {$newAlbumId = Get-RegexMatch -text $responseText -regex '"new_album_id":"(.+?)"';};
 
@@ -411,4 +289,4 @@ $link | C:\Windows\System32\clip.exe;
 Show-BalloonTip -Title $title -MessageType Info -Message "$link - copied to clipboard" -Duration 6000 -Dispose $true;
 	
 	
-powershell
+#powershell
